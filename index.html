@@ -293,7 +293,7 @@
           <!-- Add more languages as needed -->
         </select>
         <!-- Clear Chat Button -->
-        <button id="chat-clear" title="Clear Chat">🗑️ Clear Chat</button>
+        <button id="chat-clear" title="Clear Chat">🗑️</button>
       </div>
     </div>
     <div id="disclaimer">Disclaimer: This is an AI-Enabled chatbot. All recommendations require final approval by the business owner.</div>
@@ -432,7 +432,7 @@
       }
     }
 
-    // Function to display typing animation for bot messages
+    // Function to display typing animation for bot messages with formatted content
     function displayTypingMessage(message, sender, onComplete) {
       const messageContainer = document.createElement('div');
       messageContainer.classList.add('chatbot-message', sender);
@@ -444,30 +444,61 @@
       messageContainer.appendChild(messageContent);
       messagesContainer.appendChild(messageContainer);
 
-      let index = 0;
-      const typingSpeed = 20; // Adjust typing speed (milliseconds per character)
+      // Parse and sanitize the entire message upfront
+      const markdownContent = marked.parse(message);
+      const safeHTML = DOMPurify.sanitize(markdownContent);
 
-      function typeCharacter() {
-        if (index < message.length) {
-          messageContent.innerHTML += message.charAt(index);
-          index++;
-          // Auto-scroll to bottom
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
-          setTimeout(typeCharacter, typingSpeed);
-        } else {
-          // Parsing and sanitizing the final message content
-          const markdownContent = marked.parse(messageContent.innerHTML);
-          const safeHTML = DOMPurify.sanitize(markdownContent);
-          messageContent.innerHTML = safeHTML;
+      // Create a temporary container to parse the sanitized HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = safeHTML;
 
-          // Call the onComplete callback if provided
-          if (typeof onComplete === 'function') {
-            onComplete();
+      // Function to recursively type child nodes
+      function typeNode(parent, nodes, index, callback) {
+        if (index < nodes.length) {
+          const node = nodes[index];
+
+          let clone;
+          if (node.nodeType === Node.TEXT_NODE) {
+            // For text nodes, we'll reveal the text progressively
+            clone = document.createTextNode('');
+            parent.appendChild(clone);
+
+            typeTextNode(node, clone, 0, function() {
+              typeNode(parent, nodes, index + 1, callback);
+            });
+          } else {
+            // For element nodes, clone the node without children
+            clone = node.cloneNode(false);
+            parent.appendChild(clone);
+
+            // Recursively process child nodes
+            typeNode(clone, Array.from(node.childNodes), 0, function() {
+              // After processing all child nodes, proceed to next sibling
+              typeNode(parent, nodes, index + 1, callback);
+            });
           }
+        } else if (typeof callback === 'function') {
+          callback();
         }
       }
 
-      typeCharacter();
+      // Function to type out text content of a text node
+      function typeTextNode(originalNode, cloneNode, charIndex, callback) {
+        const text = originalNode.textContent;
+        if (charIndex < text.length) {
+          cloneNode.textContent += text.charAt(charIndex);
+          // Auto-scroll to bottom
+          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+          setTimeout(function() {
+            typeTextNode(originalNode, cloneNode, charIndex + 1, callback);
+          }, 15); // Adjust typing speed (milliseconds per character)
+        } else if (typeof callback === 'function') {
+          callback();
+        }
+      }
+
+      // Start typing from the top-level child nodes
+      typeNode(messageContent, Array.from(tempDiv.childNodes), 0, onComplete);
     }
 
     function displayMessage(message, sender) {
